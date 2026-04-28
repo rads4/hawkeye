@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	url := "http://localhost:8081/ingest/cloud"
+	url := "http://localhost:8082/ingest/cloud"
 
 	payloads := []string{
 		`{

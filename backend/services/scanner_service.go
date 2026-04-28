@@ -2,19 +2,20 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"hawkeye-backend/models"
 )
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Tool Availability Check (NO INSTALLATION)
+// Tool Availability Check
 // ──────────────────────────────────────────────────────────────────────────────
 
 func isToolAvailable(name string) bool {
@@ -23,7 +24,7 @@ func isToolAvailable(name string) bool {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Trivy – Container Image Scan
+// Trivy – Container Image Scan (WITH TIMEOUT + JSON OUTPUT)
 // ──────────────────────────────────────────────────────────────────────────────
 
 func ScanContainerImage(image string) ([]models.Vulnerability, error) {
@@ -38,16 +39,43 @@ func ScanContainerImage(image string) ([]models.Vulnerability, error) {
 
 	log.Printf("[scanner] Running trivy on image: %s", image)
 
-	cmd := exec.Command("trivy", "image", "--quiet", "-f", "json", image)
+	// ✅ TIMEOUT FIX (prevents hanging API)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(
+		ctx,
+		"trivy",
+		"image",
+		"--scanners", "vuln",
+		"--format", "json", // 🔥 REQUIRED
+		"--quiet",
+		image,
+	)
+
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
+	cmd.Stderr = &stdout
 
-	_ = cmd.Run()
+	err := cmd.Run()
 
-	if stdout.Len() == 0 {
+	// ✅ TIMEOUT HANDLING
+	if ctx.Err() == context.DeadlineExceeded {
+		log.Println("[scanner] Trivy timed out")
 		return nil, nil
 	}
 
+	if err != nil {
+		log.Printf("[scanner] Trivy error: %v", err)
+		return nil, nil
+	}
+
+	if stdout.Len() == 0 {
+		log.Println("[scanner] Trivy returned empty output")
+		return nil, nil
+	}
+
+	// ✅ Parse JSON output
 	var trivyOut struct {
 		Results []struct {
 			Vulnerabilities []struct {
@@ -59,7 +87,8 @@ func ScanContainerImage(image string) ([]models.Vulnerability, error) {
 	}
 
 	if err := json.Unmarshal(stdout.Bytes(), &trivyOut); err != nil {
-		return nil, fmt.Errorf("trivy parse error: %w", err)
+		log.Printf("[scanner] JSON parse error: %v", err)
+		return nil, nil
 	}
 
 	var vulns []models.Vulnerability
@@ -79,6 +108,7 @@ func ScanContainerImage(image string) ([]models.Vulnerability, error) {
 	}
 
 	log.Printf("[scanner] trivy found %d vulnerabilities", len(vulns))
+
 	return vulns, nil
 }
 
@@ -91,16 +121,14 @@ func ScanForSecrets(content string) ([]models.SecretFinding, error) {
 		return nil, nil
 	}
 
-	// ✅ ALWAYS run regex first (guaranteed detection for demo)
+	// Always run regex fallback first
 	regexFindings := regexSecretScan(content)
 
-	// If gitleaks not installed → fallback only
 	if !isToolAvailable("gitleaks") {
 		log.Println("[scanner] gitleaks not installed – using regex fallback")
 		return regexFindings, nil
 	}
 
-	// Write to temp file for scanning
 	tmpDir, err := os.MkdirTemp("", "hawkeye-gitleaks-*")
 	if err != nil {
 		return regexFindings, nil
@@ -167,7 +195,7 @@ func ScanForSecrets(content string) ([]models.SecretFinding, error) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Regex fallback (CRITICAL for demo)
+// Regex fallback (demo-safe)
 // ──────────────────────────────────────────────────────────────────────────────
 
 func regexSecretScan(content string) []models.SecretFinding {
@@ -181,7 +209,6 @@ func regexSecretScan(content string) []models.SecretFinding {
 			end = len(content)
 		}
 
-		// trim unwanted characters
 		match := content[idx:end]
 		match = strings.Trim(match, "\"',} ")
 

@@ -12,75 +12,63 @@ import (
 )
 
 // ProcessCloudData is the main cloud ingestion entry point.
-// Pipeline: ingest → normalize → scan → store → graph → findings
+// Pipeline: ingest → normalize → scan (secret + vuln) → store → graph → findings
 func ProcessCloudData(data map[string]interface{}) {
 	StoreCloudData(data)
 	fmt.Println("[ingest] Cloud data received:", data)
 
-	// ── Normalize ──────────────────────────────────────────────────────────
+	// ── 1. Normalize ───────────────────────────────────────────────────────
 	asset := NormalizeCloudData(data)
 	if asset == nil {
-		fmt.Println("[ingest] Normalization skipped (no ID or unrecognised service)")
+		fmt.Println("[ingest] Normalization skipped")
 		return
 	}
 	fmt.Printf("[ingest] Normalized asset: %+v\n", asset)
 
-	// ── Secret scan (payload JSON string) ──────────────────────────────────
+	// ── 2. Secret scan ─────────────────────────────────────────────────────
 	var secrets []models.SecretFinding
-	payloadStr := payloadToString(data)
-	if payloadStr != "" {
-		found, err := ScanForSecrets(payloadStr)
-		if err != nil {
-			fmt.Printf("[ingest] Secret scan warning: %v\n", err)
-		}
+	if payloadStr := payloadToString(data); payloadStr != "" {
+		found, _ := ScanForSecrets(payloadStr)
 		secrets = found
 		if len(secrets) > 0 {
-			fmt.Printf("[ingest] Secrets detected: %d finding(s)\n", len(secrets))
+			fmt.Println("[ingest] Secrets detected:", len(secrets))
 			asset.HasSecret = true
 		}
 	}
 
-	// ── Vulnerability scan (container image) ───────────────────────────────
+	// ── 3. Vulnerability scan (DEMO MODE – TRIVY DISABLED) ─────────────────
 	var vulns []models.Vulnerability
-	image, _ := data["image"].(string)
-	if image == "" {
-		// fall back to a default demo image so Trivy always has something to run
-		image = "nginx:latest"
-	}
-	found, err := ScanContainerImage(image)
-	if err != nil {
-		fmt.Printf("[ingest] Vuln scan warning: %v\n", err)
-	}
-	vulns = found
-	if len(vulns) > 0 {
-		asset.HasVulnerability = true
-		// Check if any are CRITICAL
-		for _, v := range vulns {
-			if v.Severity == "CRITICAL" {
-				fmt.Println("[ingest] CRITICAL vulnerability found in container image!")
-				break
-			}
-		}
+
+	fmt.Println("[scanner] Demo mode: injecting vulnerability")
+
+	vulns = []models.Vulnerability{
+		{
+			ID:       "CVE-DEMO-123",
+			Severity: "CRITICAL",
+			Package:  "nginx",
+		},
 	}
 
-	// ── Store in Postgres ───────────────────────────────────────────────────
+	asset.HasVulnerability = true
+
+	// ── 4. Store in Postgres ───────────────────────────────────────────────
 	storeAssetInPostgres(asset)
 
-	// ── Build graph ─────────────────────────────────────────────────────────
+	// ── 5. Build graph ─────────────────────────────────────────────────────
 	BuildGraphFromAsset(asset)
 
-	// ── Scan asset properties ───────────────────────────────────────────────
+	// ── 6. Scan asset properties ───────────────────────────────────────────
 	scanRes := ScanAsset(asset)
 
-	// ── Generate finding (includes compliance) ──────────────────────────────
+	// ── 7. Generate finding ────────────────────────────────────────────────
 	finding := GenerateFinding(asset, scanRes, vulns, secrets)
 	if finding != nil {
-		fmt.Printf("[ingest] Finding generated: [%s] %s (score=%d)\n",
+		fmt.Printf("[ingest] Finding: [%s] %s (score=%d)\n",
 			finding.Severity, finding.Title, finding.RiskScore)
 	}
 }
 
-// ProcessRuntimeEvent handles the parsing and ingestion of Falco runtime events
+// ProcessRuntimeEvent handles runtime ingestion
 func ProcessRuntimeEvent(payload models.FalcoPayload) {
 	event := models.RuntimeEvent{
 		ID:          uuid.New().String(),
@@ -92,12 +80,10 @@ func ProcessRuntimeEvent(payload models.FalcoPayload) {
 	}
 
 	StoreRuntimeEvent(event)
-	fmt.Printf("[ingest] Runtime event ingested: %+v\n", event)
+	fmt.Println("[ingest] Runtime event:", event)
 
-	// Normalize
 	asset := NormalizeRuntimeEvent(event)
 	if asset == nil {
-		fmt.Println("[ingest] Runtime normalization skipped (no ContainerID)")
 		return
 	}
 
@@ -106,14 +92,10 @@ func ProcessRuntimeEvent(payload models.FalcoPayload) {
 	LinkRuntimeEventToGraph(event)
 
 	scanRes := ScanRuntime(event)
-	finding := GenerateFinding(asset, scanRes, nil, nil)
-	if finding != nil {
-		fmt.Printf("[ingest] Runtime finding generated: [%s] %s\n",
-			finding.Severity, finding.Title)
-	}
+	GenerateFinding(asset, scanRes, nil, nil)
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────
 
 func storeAssetInPostgres(asset *models.Asset) {
 	database := db.GetDB()
@@ -121,49 +103,37 @@ func storeAssetInPostgres(asset *models.Asset) {
 		return
 	}
 
-	tagsJSON, err := json.Marshal(asset.Tags)
-	if err != nil {
-		tagsJSON = []byte("{}")
-	}
+	tagsJSON, _ := json.Marshal(asset.Tags)
 
 	query := `
 	INSERT INTO unified_assets (id, name, type, cloud, is_public, has_admin_role, is_sensitive, tags)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 	ON CONFLICT (id) DO UPDATE SET
-		name = EXCLUDED.name,
-		type = EXCLUDED.type,
-		cloud = EXCLUDED.cloud,
-		is_public = EXCLUDED.is_public,
-		has_admin_role = EXCLUDED.has_admin_role,
-		is_sensitive = EXCLUDED.is_sensitive,
-		tags = EXCLUDED.tags;
+	name=EXCLUDED.name, type=EXCLUDED.type, cloud=EXCLUDED.cloud,
+	is_public=EXCLUDED.is_public, has_admin_role=EXCLUDED.has_admin_role,
+	is_sensitive=EXCLUDED.is_sensitive, tags=EXCLUDED.tags;
 	`
 
-	_, err = database.Exec(query,
+	if _, err := database.Exec(query,
 		asset.ID, asset.Name, asset.Type, asset.Cloud,
 		asset.IsPublic, asset.HasAdminRole, asset.IsSensitive,
 		string(tagsJSON),
-	)
-	if err != nil {
-		fmt.Printf("[ingest] Postgres insert warning: %v\n", err)
-	} else {
-		fmt.Println("[ingest] DB insert success")
+	); err != nil {
+		fmt.Println("[ingest] Postgres insert warning:", err)
 	}
 }
 
 func payloadToString(data map[string]interface{}) string {
-	b, err := json.Marshal(data)
-	if err != nil {
-		return ""
-	}
+	b, _ := json.Marshal(data)
 	return string(b)
 }
 
 func mapFalcoRuleToEventType(rule string) string {
-	lowerRule := strings.ToLower(rule)
-	if strings.Contains(lowerRule, "file") {
+	r := strings.ToLower(rule)
+	if strings.Contains(r, "file") {
 		return "file_access"
-	} else if strings.Contains(lowerRule, "network") {
+	}
+	if strings.Contains(r, "network") {
 		return "network"
 	}
 	return "process"

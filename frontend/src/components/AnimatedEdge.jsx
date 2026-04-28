@@ -20,27 +20,32 @@ export default function AnimatedEdge({
         d={edgePath}
         fill="none"
         className={isAttack ? 'react-flow__edge-path attack-path-base' : 'react-flow__edge-path'}
-        style={style}
+        style={{
+          ...style,
+          strokeWidth: isAttack ? 2.5 : 2,
+        }}
         markerEnd={markerEnd}
       />
 
-      {/* Glow layer for attack path */}
+      {/* Pulse Glow layer for attack path */}
       {isAttack && (
         <path
           d={edgePath}
           fill="none"
-          stroke="rgba(255,51,102,0.25)"
+          stroke="#ff3366"
           strokeWidth="6"
           strokeLinecap="round"
+          className="animate-pulse"
+          style={{ opacity: 0.15, filter: 'blur(3px)' }}
         />
       )}
 
       {/* Flowing particles on attack path */}
       {isAttack && [0, 0.33, 0.66].map((offset, i) => (
-        <circle key={i} r="3.5" fill="#ff3366" style={{ filter: 'drop-shadow(0 0 4px #ff3366)' }}>
+        <circle key={i} r="3" fill="#ff3366" style={{ filter: 'drop-shadow(0 0 6px #ff3366)' }}>
           <animateMotion
-            dur="2s"
-            begin={`${offset * 2}s`}
+            dur="2.5s"
+            begin={`${offset * 2.5}s`}
             repeatCount="indefinite"
             path={edgePath}
           />

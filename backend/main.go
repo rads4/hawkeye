@@ -60,9 +60,9 @@ func main() {
 	}
 
 	// Start server
-	log.Println("Starting Hawkeye backend on port 8081...")
+	log.Println("Starting Hawkeye backend on port 8082...")
 	log.Println("DEBUG PORT:", cfg.ServerPort)
-	if err := r.Run(":8081"); err != nil {
+	if err := r.Run(":8082"); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
