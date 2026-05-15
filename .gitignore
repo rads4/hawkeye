@@ -25,3 +25,7 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+backend_old/
+frontend_after_antigrav_partial/
+frontend_before_ui_fix/
