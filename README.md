@@ -1,4 +1,4 @@
-# Hawkeye
+# 🦅 hawkeye
 
 Attack-path driven CNAPP platform for AWS and GCP.
 
@@ -20,6 +20,7 @@ Hawkeye combines:
 
 into a single interactive platform.
 
+---
 
 ## Core Workflow
 
@@ -55,7 +56,7 @@ Cloud Assets + Runtime Events
 - Jira remediation workflow
 - Risk scoring and finding prioritization
 
-
+---
 
 # Attack Path Model
 
@@ -73,7 +74,7 @@ Privileged IAM Role
 Sensitive S3 Bucket
 ```
 
-
+---
 
 # Platform Screens
 
@@ -98,7 +99,7 @@ Detailed breakdown of:
 
 `Screenshot from 2026-05-15 16-03-16.png`
 
-
+---
 
 ## Resource Detail View
 
@@ -106,7 +107,7 @@ Contextual resource inspection with exposure indicators and attack-path associat
 
 `Screenshot from 2026-05-15 16-04-30.png`
 
-
+---
 
 ## Cloud Environment Onboarding
 
@@ -116,7 +117,7 @@ AWS and GCP onboarding workflow for secure environment scanning.
 
 `Screenshot from 2026-05-15 16-05-07.png`
 
-
+---
 
 # Correlation Engine
 
@@ -143,7 +144,7 @@ Sensitive S3 Access
 Critical Attack Path
 ```
 
-
+---
 
 # Architecture
 
@@ -171,7 +172,7 @@ Critical Attack Path
                 React Visualization
 ```
 
-
+---
 
 # Tech Stack
 
@@ -193,7 +194,19 @@ Critical Attack Path
 - Docker
 - ECS / EC2 / IAM / S3
 
+---
 
+# Key Concepts
+
+| Concept | Description |
+|---|---|
+| Attack Path | Visual chain of compromise |
+| Correlator | Links multiple findings into a single risk narrative |
+| Blast Radius | Scope of potential impact |
+| Runtime Detection | Falco-based suspicious activity detection |
+| Sensitive Data Mapping | Tracks access paths to critical assets |
+
+---
 
 # Future Enhancements
 
