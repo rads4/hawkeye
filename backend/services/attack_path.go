@@ -90,8 +90,8 @@ func findPathsInMemory() []AttackPath {
 		} else {
 			for _, edge := range Edges {
 				if edge.Source == current && !visited[edge.Target] {
-					// We only care about specific edges for attack paths: EXPOSES, HAS_ROLE, CAN_ACCESS
-					if edge.Label == "EXPOSES" || edge.Label == "HAS_ROLE" || edge.Label == "CAN_ACCESS" {
+					// We only care about specific edges for attack paths
+					if edge.Label == "EXPOSES" || edge.Label == "HAS_VULNERABILITY" || edge.Label == "ESCALATES_TO" || edge.Label == "CAN_ACCESS" {
 						dfs(edge.Target, currentPath, visited)
 					}
 				}

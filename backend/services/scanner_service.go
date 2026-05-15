@@ -43,12 +43,11 @@ func ScanContainerImage(image string) ([]models.Vulnerability, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(
-		ctx,
+	cmd := exec.CommandContext(ctx,
 		"trivy",
 		"image",
 		"--scanners", "vuln",
-		"--format", "json", // 🔥 REQUIRED
+		"--format", "json",
 		"--quiet",
 		image,
 	)

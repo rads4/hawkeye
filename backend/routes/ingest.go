@@ -39,3 +39,21 @@ func IngestRuntimeEvent(c *gin.Context) {
 		"message": "Runtime event ingested successfully",
 	})
 }
+
+// IngestAWSData handles the /ingest/aws endpoint
+func IngestAWSData(c *gin.Context) {
+	results, err := services.FetchECSAssets()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	for _, assetData := range results {
+		services.ProcessCloudData(assetData)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "AWS data ingested successfully",
+		"count":   len(results),
+	})
+}

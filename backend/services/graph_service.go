@@ -5,6 +5,7 @@ import (
 	"hawkeye-backend/db"
 	"hawkeye-backend/models"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
@@ -56,67 +57,92 @@ func BuildGraphFromAsset(asset *models.Asset) {
 		return
 	}
 
-	computeID  := "compute-"  + asset.ID
-	identityID := "identity-" + asset.ID
-	dataID     := "data-"     + asset.ID
-	secretID   := "secret-"   + asset.ID
-	vulnID     := "vuln-"     + asset.ID
-
-	// ── Internet ───────────────────────────────────────────────────────────
-	AddNode(models.Node{ID: "internet", Type: "internet", Label: "Internet"})
-
-	// ── Compute ────────────────────────────────────────────────────────────
-	AddNode(models.Node{ID: computeID, Type: "compute", Label: asset.Name})
-
-	if asset.IsPublic {
-		AddEdge(models.Edge{Source: "internet", Target: computeID, Label: "EXPOSES"})
+	computeID := asset.ID
+	identityID := asset.Tags["iam_role"]
+	if identityID == "" {
+		identityID = "iam-role-default"
 	}
+	dataID := "s3-sensitive-bucket"
+	vulnID := "vuln-" + strings.TrimPrefix(asset.ID, "ecs-task-")
 
-	// ── Identity ───────────────────────────────────────────────────────────
-	if asset.HasAdminRole {
-		AddNode(models.Node{ID: identityID, Type: "identity", Label: "AdminRole"})
-		AddEdge(models.Edge{Source: computeID, Target: identityID, Label: "HAS_ROLE"})
-	}
+	// ── Internet ─────────────────────────
+	AddNode(models.Node{
+		ID:    "internet",
+		Type:  "network",
+		Label: "internet",
+	})
 
-	// ── Data ───────────────────────────────────────────────────────────────
-	if asset.IsSensitive {
-		AddNode(models.Node{ID: dataID, Type: "data", Label: "SensitiveData"})
-		if asset.HasAdminRole {
-			AddEdge(models.Edge{Source: identityID, Target: dataID, Label: "CAN_ACCESS"})
-		} else {
-			AddEdge(models.Edge{Source: computeID, Target: dataID, Label: "CAN_ACCESS"})
-		}
-	}
+	// ── Compute ─────────────────────────
+	AddNode(models.Node{
+		ID:    computeID,
+		Type:  "compute",
+		Label: computeID,
+	})
 
-	// ── Secret ─────────────────────────────────────────────────────────────
-	if asset.HasSecret {
-		AddNode(models.Node{ID: secretID, Type: "secret", Label: "ExposedSecret"})
-		AddEdge(models.Edge{Source: computeID, Target: secretID, Label: "HAS_SECRET"})
-		if asset.IsSensitive {
-			AddEdge(models.Edge{Source: secretID, Target: dataID, Label: "CAN_ACCESS"})
-		}
-	}
+	AddEdge(models.Edge{
+		Source: "internet",
+		Target: computeID,
+		Label:  "EXPOSES",
+	})
 
-	// ── Vulnerability ──────────────────────────────────────────────────────
+	// ── Track current path node ─────────
+	current := computeID
+
+	// ── Vulnerability ───────────────────
 	if asset.HasVulnerability {
-		AddNode(models.Node{ID: vulnID, Type: "vulnerability", Label: "ContainerVulnerability"})
-		AddEdge(models.Edge{Source: computeID, Target: vulnID, Label: "HAS_VULNERABILITY"})
-		if asset.IsSensitive {
-			AddEdge(models.Edge{Source: vulnID, Target: dataID, Label: "CAN_EXPLOIT"})
-		}
+		AddNode(models.Node{
+			ID:    vulnID,
+			Type:  "vulnerability",
+			Label: "vulnerability",
+		})
+
+		AddEdge(models.Edge{
+			Source: current,
+			Target: vulnID,
+			Label:  "HAS_VULNERABILITY",
+		})
+
+		current = vulnID
 	}
 
-	// ── Persist to Neo4j (or stay in-memory if unavailable) ────────────────
+	// ── Identity ────────────────────────
+	if asset.HasAdminRole {
+		AddNode(models.Node{
+			ID:    identityID,
+			Type:  "identity",
+			Label: identityID,
+		})
+
+		AddEdge(models.Edge{
+			Source: current,
+			Target: identityID,
+			Label:  "ESCALATES_TO",
+		})
+
+		current = identityID
+	}
+
+	// ── Data ───────────────────────────
+	if asset.IsSensitive {
+		AddNode(models.Node{
+			ID:    dataID,
+			Type:  "data",
+			Label: "s3-sensitive",
+		})
+
+		AddEdge(models.Edge{
+			Source: current,
+			Target: dataID,
+			Label:  "CAN_ACCESS",
+		})
+	}
+
+	// ── Neo4j sync ─────────────────────
 	ctx := context.Background()
 	if db.Driver != nil {
 		if err := db.Driver.VerifyConnectivity(ctx); err == nil {
-			log.Println("Using Neo4j graph")
 			insertIntoNeo4j(asset)
-		} else {
-			log.Println("Neo4j not reachable → using in-memory graph fallback")
 		}
-	} else {
-		log.Println("Using in-memory graph fallback")
 	}
 }
 
@@ -153,91 +179,84 @@ func LinkRuntimeEventToGraph(event models.RuntimeEvent) {
 	}
 }
 
-// insertIntoNeo4j writes the full asset topology to Neo4j using MERGE (idempotent)
+// insertIntoNeo4j writes the full asset topology to Neo4j using a strict linear path
 func insertIntoNeo4j(asset *models.Asset) {
 	ctx := context.Background()
 	session := db.Driver.NewSession(ctx, neo4j.SessionConfig{})
 	defer session.Close(ctx)
 
-	computeID  := "compute-"  + asset.ID
-	identityID := "identity-" + asset.ID
-	dataID     := "data-"     + asset.ID
-	secretID   := "secret-"   + asset.ID
-	vulnID     := "vuln-"     + asset.ID
-
-	// Base: Internet + Compute
-	_, err := session.Run(ctx, `
-		MERGE (i:Internet {id: 'internet'})
-		MERGE (c:Compute {id: $computeId, name: $name})
-	`, map[string]interface{}{"computeId": computeID, "name": asset.Name})
-
-	if asset.IsPublic {
-		session.Run(ctx, `
-			MATCH (i:Internet {id: 'internet'})
-			MATCH (c:Compute {id: $computeId})
-			MERGE (i)-[:EXPOSES]->(c)
-		`, map[string]interface{}{"computeId": computeID})
+	computeID := asset.ID
+	identityID := asset.Tags["iam_role"]
+	if identityID == "" {
+		identityID = "iam-role-default"
 	}
+	dataID := "s3-sensitive-bucket"
+	vulnID := "vuln-" + strings.TrimPrefix(asset.ID, "ecs-task-")
 
-	if asset.HasAdminRole {
-		session.Run(ctx, `
-			MATCH (c:Compute {id: $computeId})
-			MERGE (id:Identity {id: $identityId})
-			MERGE (c)-[:HAS_ROLE]->(id)
-		`, map[string]interface{}{"computeId": computeID, "identityId": identityID})
-	}
+	// 1. Create nodes
+	_, _ = session.Run(ctx, `
+		MERGE (i:Internet {id: 'internet', label: 'internet', type: 'network'})
+		MERGE (c:Compute {id: $computeId, label: $computeId, type: 'compute'})
+	`, map[string]interface{}{"computeId": computeID})
 
-	if asset.IsSensitive {
-		if asset.HasAdminRole {
-			session.Run(ctx, `
-				MATCH (id:Identity {id: $identityId})
-				MERGE (d:Data {id: $dataId})
-				MERGE (id)-[:CAN_ACCESS]->(d)
-			`, map[string]interface{}{"identityId": identityID, "dataId": dataID})
-		} else {
-			session.Run(ctx, `
-				MATCH (c:Compute {id: $computeId})
-				MERGE (d:Data {id: $dataId})
-				MERGE (c)-[:CAN_ACCESS]->(d)
-			`, map[string]interface{}{"computeId": computeID, "dataId": dataID})
-		}
-	}
+	// 2. Internet -> Compute
+	_, _ = session.Run(ctx, `
+		MATCH (i:Internet {id: 'internet'})
+		MATCH (c:Compute {id: $computeId})
+		MERGE (i)-[:EXPOSES]->(c)
+	`, map[string]interface{}{"computeId": computeID})
 
-	if asset.HasSecret {
-		session.Run(ctx, `
-			MATCH (c:Compute {id: $computeId})
-			MERGE (s:Secret {id: $secretId})
-			MERGE (c)-[:HAS_SECRET]->(s)
-		`, map[string]interface{}{"computeId": computeID, "secretId": secretID})
+	currentID := computeID
+	currentLabel := "Compute"
 
-		if asset.IsSensitive {
-			session.Run(ctx, `
-				MATCH (s:Secret {id: $secretId})
-				MERGE (d:Data {id: $dataId})
-				MERGE (s)-[:CAN_ACCESS]->(d)
-			`, map[string]interface{}{"secretId": secretID, "dataId": dataID})
-		}
-	}
-
-	// Vulnerability node – this is why vuln was missing: the block is now
-	// always evaluated within the same session as the rest of the asset topology
+	// 3. Compute -> Vulnerability
 	if asset.HasVulnerability {
-		session.Run(ctx, `
-			MATCH (c:Compute {id: $computeId})
-			MERGE (v:Vulnerability {id: $vulnId})
-			MERGE (c)-[:HAS_VULNERABILITY]->(v)
-		`, map[string]interface{}{"computeId": computeID, "vulnId": vulnID})
-
-		if asset.IsSensitive {
-			session.Run(ctx, `
-				MATCH (v:Vulnerability {id: $vulnId})
-				MERGE (d:Data {id: $dataId})
-				MERGE (v)-[:CAN_EXPLOIT]->(d)
-			`, map[string]interface{}{"vulnId": vulnID, "dataId": dataID})
-		}
+		_, _ = session.Run(ctx, `
+			MATCH (prev:`+currentLabel+` {id: $prevId})
+			MERGE (v:Vulnerability {id: $vulnId, label: 'vulnerability', type: 'vulnerability'})
+			MERGE (prev)-[:HAS_VULNERABILITY]->(v)
+		`, map[string]interface{}{"prevId": currentID, "vulnId": vulnID})
+		currentID = vulnID
+		currentLabel = "Vulnerability"
 	}
 
-	if err != nil {
-		log.Printf("Warning: Neo4j insert error: %v", err)
+	// 4. ... -> Identity
+	if asset.HasAdminRole {
+		_, _ = session.Run(ctx, `
+			MATCH (prev:`+currentLabel+` {id: $prevId})
+			MERGE (id:Identity {id: $identityId, label: $identityId, type: 'identity'})
+			MERGE (prev)-[:ESCALATES_TO]->(id)
+		`, map[string]interface{}{"prevId": currentID, "identityId": identityID})
+		currentID = identityID
+		currentLabel = "Identity"
 	}
+
+	// 5. ... -> Data
+	if asset.IsSensitive {
+		_, _ = session.Run(ctx, `
+			MATCH (prev:`+currentLabel+` {id: $prevId})
+			MERGE (d:Data {id: $dataId, label: 's3-sensitive', type: 'data'})
+			MERGE (prev)-[:CAN_ACCESS]->(d)
+		`, map[string]interface{}{"prevId": currentID, "dataId": dataID})
+	}
+}
+
+func ResetGraph() {
+	graphMutex.Lock()
+	defer graphMutex.Unlock()
+
+	// 1. Clear in-memory graph
+	Nodes = make(map[string]models.Node)
+	Edges = make([]models.Edge, 0)
+	edgeSet = make(map[string]bool)
+
+	// 2. Clear Neo4j
+	ctx := context.Background()
+	if db.Driver != nil {
+		session := db.Driver.NewSession(ctx, neo4j.SessionConfig{})
+		defer session.Close(ctx)
+		_, _ = session.Run(ctx, "MATCH (n) DETACH DELETE n", nil)
+	}
+
+	log.Println("[graph] in-memory and Neo4j graph cleared")
 }

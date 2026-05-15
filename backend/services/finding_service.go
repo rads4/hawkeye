@@ -100,3 +100,7 @@ func GenerateFinding(asset *models.Asset, scan ScanResult,
 	ActiveFindings = append(ActiveFindings, finding)
 	return &finding
 }
+
+func ClearFindings() {
+	ActiveFindings = []models.Finding{}
+}

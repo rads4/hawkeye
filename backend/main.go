@@ -57,6 +57,7 @@ func main() {
 	{
 		ingestGroup.POST("/cloud", routes.IngestCloudData)
 		ingestGroup.POST("/runtime", routes.IngestRuntimeEvent)
+		ingestGroup.GET("/aws", routes.IngestAWSData)
 	}
 
 	// Start server

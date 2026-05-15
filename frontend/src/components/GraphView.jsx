@@ -195,6 +195,7 @@ function GraphViewContent({
             if (t === 'Compute') return '#b366ff';
             if (t === 'Identity') return '#ff007f';
             if (t === 'Data') return '#ffcc00';
+            if (t === 'vulnerability') return '#ff4d4f';
             return '#444';
           }}
           nodeStrokeWidth={0}

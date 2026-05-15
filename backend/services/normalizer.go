@@ -33,23 +33,18 @@ func NormalizeRuntimeEvent(event models.RuntimeEvent) *models.Asset {
 }
 
 func mapECS(payload map[string]interface{}) *models.Asset {
-	id, ok := payload["task_id"].(string)
-	if !ok || id == "" {
-		// VALIDATOR: skip if ID missing
+	taskID, ok := payload["task_id"].(string)
+	if !ok || taskID == "" {
 		return nil
 	}
 
+	// Standardize ID and Name
 	asset := &models.Asset{
-		ID:    id,
+		ID:    "ecs-task-" + taskID,
+		Name:  "ecs-task-" + taskID,
 		Type:  "compute",
 		Cloud: "aws",
-		Tags:  map[string]string{"env": "dev", "owner": "unknown"}, // ENRICHER
-	}
-
-	if name, ok := payload["name"].(string); ok {
-		asset.Name = name
-	} else {
-		asset.Name = id
+		Tags:  map[string]string{"provider": "aws", "service": "ecs"},
 	}
 
 	if _, ok := payload["public_ip"]; ok {
@@ -57,22 +52,23 @@ func mapECS(payload map[string]interface{}) *models.Asset {
 	}
 
 	if iamRole, ok := payload["iam_role"].(string); ok {
+		asset.Tags["iam_role"] = "iam-role-" + iamRole
 		if strings.Contains(strings.ToLower(iamRole), "admin") {
 			asset.HasAdminRole = true
 		}
 	}
 
 	if val, ok := payload["s3_access"]; ok {
-    switch v := val.(type) {
-    	case bool:
-        	if v {
-            	asset.IsSensitive = true
-        	}
-    	case string:
-        	if strings.ToLower(v) == "true" {
-            	asset.IsSensitive = true
-        	}
-    	}
+		switch v := val.(type) {
+		case bool:
+			if v {
+				asset.IsSensitive = true
+			}
+		case string:
+			if strings.ToLower(v) == "true" {
+				asset.IsSensitive = true
+			}
+		}
 	}
 
 	return asset
