@@ -82,7 +82,7 @@ Sensitive S3 Bucket
 
 Interactive attack-path visualization with correlated findings and cloud assets.
 
-`assets/main-attack-graph-screen.png`
+![Main Attack Graph](assets/main-attack-graph-screen.png)
 
 ---
 
@@ -90,15 +90,15 @@ Interactive attack-path visualization with correlated findings and cloud assets.
 
 Detailed breakdown of:
 
-- risk score
-- blast radius
-- attack chain
-- compliance failures
-- remediation guidance
+- Risk score
+- Blast radius
+- Attack chain
+- Compliance failures
+- Remediation guidance
 
-`assets/finding-details.png`
+![Finding Details](assets/finding-details.png)
 
-`assets/comp-remediation.png`
+![Compliance & Remediation](assets/comp-remediation.png)
 
 ---
 
@@ -106,7 +106,7 @@ Detailed breakdown of:
 
 Contextual resource inspection with exposure indicators and attack-path association.
 
-`assets/attack-path-zoom.png`
+![Attack Path Zoom](assets/attack-path-zoom.png)
 
 ---
 
@@ -114,9 +114,9 @@ Contextual resource inspection with exposure indicators and attack-path associat
 
 AWS and GCP onboarding workflow for secure environment scanning.
 
-`assets/aws-setup.png`
+![AWS Setup](assets/aws-setup.png)
 
-`assets/gcp-setup.png`
+![GCP Setup](assets/gcp-setup.png)
 
 ---
 
