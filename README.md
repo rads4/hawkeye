@@ -82,22 +82,23 @@ Sensitive S3 Bucket
 
 Interactive attack-path visualization with correlated findings and cloud assets.
 
-`Screenshot from 2026-05-15 16-05-07.png`
+`assets/main-attack-graph-screen.png`
 
 ---
 
 ## Finding Details
 
 Detailed breakdown of:
+
 - risk score
 - blast radius
 - attack chain
 - compliance failures
 - remediation guidance
 
-`Screenshot from 2026-05-15 16-01-40.png`
+`assets/finding-details.png`
 
-`Screenshot from 2026-05-15 16-03-16.png`
+`assets/comp-remediation.png`
 
 ---
 
@@ -105,7 +106,7 @@ Detailed breakdown of:
 
 Contextual resource inspection with exposure indicators and attack-path association.
 
-`Screenshot from 2026-05-15 16-04-30.png`
+`assets/attack-path-zoom.png`
 
 ---
 
@@ -113,9 +114,9 @@ Contextual resource inspection with exposure indicators and attack-path associat
 
 AWS and GCP onboarding workflow for secure environment scanning.
 
-`Screenshot from 2026-05-15 16-04-58.png`
+`assets/aws-setup.png`
 
-`Screenshot from 2026-05-15 16-05-07.png`
+`assets/gcp-setup.png`
 
 ---
 
@@ -177,17 +178,20 @@ Critical Attack Path
 # Tech Stack
 
 ## Frontend
+
 - React
 - React Flow
 - TailwindCSS
 - Framer Motion
 
 ## Backend
+
 - Go (Golang)
 - Neo4j
 - PostgreSQL
 
 ## Cloud & Security
+
 - AWS SDK
 - GCP APIs
 - Falco
@@ -198,13 +202,13 @@ Critical Attack Path
 
 # Key Concepts
 
-| Concept | Description |
-|---|---|
-| Attack Path | Visual chain of compromise |
-| Correlator | Links multiple findings into a single risk narrative |
-| Blast Radius | Scope of potential impact |
-| Runtime Detection | Falco-based suspicious activity detection |
-| Sensitive Data Mapping | Tracks access paths to critical assets |
+| Concept                | Description                                          |
+| ---------------------- | ---------------------------------------------------- |
+| Attack Path            | Visual chain of compromise                           |
+| Correlator             | Links multiple findings into a single risk narrative |
+| Blast Radius           | Scope of potential impact                            |
+| Runtime Detection      | Falco-based suspicious activity detection            |
+| Sensitive Data Mapping | Tracks access paths to critical assets               |
 
 ---
 
